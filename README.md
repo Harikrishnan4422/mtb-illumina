@@ -10,17 +10,19 @@ Pipeline for detection of all different bacteria present within a query sequence
  - Clone this repository:
 
 ```sh
-git clone https://github.com/AarogyaAI/ntm-detection.git
+git clone https://github.com/AarogyaAI/microbial-diversity.git
 ```
  - Attach the kraken2 185GB Database also and install all above libraries after installing conda:
  
 ```sh
+cd microbial-diversity
 sudo apt-get install -y kraken2 g++ samtools
 conda install minimiap2
 pip install pandas Xlsxwriter boto3 requests flask mysql-connector-python
 git clone https://github.com/rrwick/Porechop.git
 cd Porechop
 python3 setup.py install
+cd ../
 ```
 
  - Run the container 
