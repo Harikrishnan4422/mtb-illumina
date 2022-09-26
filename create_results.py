@@ -9,7 +9,7 @@ def create_excel(sample_id,i_df):
 	for column in i_df:
 		column_width = max(i_df[column].astype(str).map(len).max(), len(column))
 		col_idx = i_df.columns.get_loc(column)
-		writer.sheets['Strains'].set_column(col_idx, col_idx, column_width)
+		writer.sheets['Microbial Density'].set_column(col_idx, col_idx, column_width)
 	writer.save()
 
 def no_file(sample_id):
@@ -38,6 +38,7 @@ def get_excel_sheet(sample_id):
 		df = pd.read_csv('results/'+sample_id+'_Taxaids.txt', header = None, sep = '	')
 		df = df.groupby(df[2]).size().reset_index(name='count')
 		df = df.rename(columns={2: 'Microbial Density', 'count': 'Read Density'})
+		df['Read Density(%)'] = ((df['Read Density'] / df['Read Density'].sum()) * 100).round(2).astype(str) + ' %'
 		df = df.sort_values('Read Density',ascending = False).head(10)
 		writer = pd.ExcelWriter(os.path.join('excel_results',str(sample_id+'.xlsx')), engine='xlsxwriter')
 		df.to_excel(writer, sheet_name='Microbial Density',index=False)
@@ -52,10 +53,11 @@ def get_excel_sheet(sample_id):
 def all_file_confirmation(s3, sample_id, start_time, call_status, status_, links):
 	flag = "ERR"
 	if status_:
-		if call_status:
-			flag = "Y"
-		else:
-			flag = "N"
+		# if call_status:
+		# 	flag = "Y"
+		# else:
+		# 	flag = "N"
+		flag = "COM"
 		botresponse = requests.get('http://'+links[1]+':80?files='+sample_id+'&type=mcd')
 		time.sleep(10)
 	conn = sqlq.connect(user="docker",password="Docker@123456789",host="10.10.40.132",database="aarogya")
@@ -94,7 +96,7 @@ def generate_file(sample_id, q, metadata, links):
 					else:
 						prefix = 's'
 				bio_status1 = subprocess.call(['sh', prefix+'demo.sh',sample_id])
-				if bio_status1 == 0:
+				if bio_status1 == 0 and sample_id+'_Taxaids.txt' in os.listdir('results'):
 					s3.upload_file('results/'+sample_id+'_Taxaids.txt','webserver-deployment-data','tbpipeline/'+'taxaids/'+sample_id+'.txt')
 					call_status = get_excel_sheet(sample_id)
 				else:
