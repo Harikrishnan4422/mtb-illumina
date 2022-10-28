@@ -204,7 +204,6 @@ sinecaudum
 aegicerativicinus
 cookii
 granulicatella
-sequences
 arh
 mediterranea
 columnare
@@ -1520,7 +1519,6 @@ donovani
 algicola
 tusciae
 echinospora
-root
 gordonibacter
 limnetica
 melaphis
