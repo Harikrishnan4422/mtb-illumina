@@ -1,4 +1,4 @@
-import os, pickle, subprocess, xlsxwriter, multiprocessing, boto3, time, requests, json, random
+import os, pickle, subprocess, xlsxwriter, multiprocessing, boto3, time, requests, json, random, re
 from flask import Flask, request, Response
 import mysql.connector as sqlq
 import pandas as pd
@@ -32,18 +32,25 @@ def clear_cache(patient_ids, locations):
 def uploadfiles(s3,sample_id,metadata):
 	for k,v in metadata['locs'].items():
 		for z in v:
-			s3.upload_file(k+'/'+sample_id+z,'webserver-deployment-data','tbpipeline/'+k+'/'+sample_id+z)
+			s3.upload_file(k+'/'+sample_id+z,'webserver-deployment-data','tbwgpipeline/'+k+'/'+sample_id+z)
 
 def break_columns(adf, species_set):
+	taxids=[]
 	all_states=[]
 	max_len=0
 	for i,r in adf.iterrows():
 		a_state={}
 		all_words = r['Microbial Diversity'].split(' ')
 		for x in all_words:
-			a_state[x] = False
-			if x.lower() in species_set:
-				a_state[x] = True
+			if x.find('unclassified')!=-1:
+				x = x.replace('unclassified','Unclassified*')
+			if not any(ss in x for ss in ['(taxid',')']):
+				a_state[x] = False
+				if x.lower() in species_set:
+					a_state[x] = True
+			else:
+				if any(chr.isdigit() for chr in x):
+					taxids.append(re.findall(r'\d+', x)[0])
 		all_states.append(a_state)
 	adf = adf.drop(['Microbial Diversity'],axis=1)
 	max_len=0
@@ -71,11 +78,12 @@ def break_columns(adf, species_set):
 			max_len= len(a_text)
 		all_texts.append(a_text)
 	md_col=[]
+	adf['Taxid'] = taxids
 	for i in range(max_len):
 		md_col.append('Microbial Diversity'+str(i+1))
 		adf['Microbial Diversity'+str(i+1)]=''
-	adf = adf[md_col+adf.columns.tolist()[:2]]
-	
+	adf = adf[md_col+adf.columns.tolist()[:3]]
+		
 	for i,r in adf.iterrows():
 		if list(all_states[i].values())[0]:
 			count = 1
@@ -87,29 +95,36 @@ def break_columns(adf, species_set):
 	return adf
 
 def get_excel_sheet(sample_id, species_set):
-		df = pd.read_csv('results/'+sample_id+'_Taxaids.txt', header = None, sep = '	')
-		df = df.groupby(df[2]).size().reset_index(name='count')
-		df = df.rename(columns={2: 'Microbial Diversity', 'count': 'Read Density'})
-		df['Read Density(%)'] = ((df['Read Density'] / df['Read Density'].sum()) * 100).round(2).astype(str) + ' %'
-		df = df.sort_values('Read Density',ascending = False).head(10).reset_index(drop=True)
-		call_status = df['Microbial Diversity'].str.contains("mycobacterium tuberculosis", case=False).any()
-		df = break_columns(df, species_set)
-		writer = pd.ExcelWriter(os.path.join('excel_results',str(sample_id+'.xlsx')), engine='xlsxwriter')
-		df.to_excel(writer, sheet_name='Microbial Diversity',index=False)
-		for column in df:
-			column_width = max(df[column].astype(str).map(len).max(), len(column))
-			col_idx = df.columns.get_loc(column)
-			writer.sheets['Microbial Diversity'].set_column(col_idx, col_idx, column_width)
-		writer.save()
-		return call_status
+	df = pd.read_csv('results/'+sample_id+'_Taxaids.txt', header = None, sep = '	')
+	df = df.groupby(df[2]).size().reset_index(name='count')
+	df = df.rename(columns={2: 'Microbial Diversity', 'count': 'Read Density'})
+	total_no_of_reads = df['Read Density'].sum()
+	df = df[~df['Microbial Diversity'].str.contains('(taxid 1)')]
+	df = df.sort_values('Read Density',ascending = False).head(10).reset_index(drop=True)
+	df['Read Density(%)'] = ((df['Read Density'] / total_no_of_reads) * 100).round(2)
+	df = df[df['Read Density(%)']>=1]
+	df['Read Density(%)'] = (df['Read Density(%)']).astype(str) + ' %'
+	call_status = df['Microbial Diversity'].str.contains("mycobacterium", case=False).any()
+	df = break_columns(df, species_set)
+	df_ = pd.DataFrame({'Total Reads':[total_no_of_reads]})
+	writer = pd.ExcelWriter(os.path.join('excel_results',str(sample_id+'.xlsx')), engine='xlsxwriter')
+	excel_dfs = {'Microbial Diversity':df,'Total Reads':df_}
+	for sh_name, ex_df in excel_dfs.items():
+		ex_df.to_excel(writer, sheet_name=sh_name,index=False)
+		for column in ex_df:
+			column_width = max(ex_df[column].astype(str).map(len).max(), len(column))
+			col_idx = ex_df.columns.get_loc(column)
+			writer.sheets[sh_name].set_column(col_idx, col_idx, column_width)
+	writer.save()
+	return call_status
 
 def get_max_time(s3, sample_id, completetime, q):
 	ref={0:'nanopore/'+sample_id,1:'single/'+sample_id,2:'paired/'+sample_id+'/'+sample_id+'.json'}
 	result_f = {'dst':'.xlsx','ntm':'.xlsx','qc':'.html','mcd':'.xlsx'}
-	uploaded_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix='tbpipeline/'+ref[q])
+	uploaded_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix='tbwgpipeline/'+ref[q])
 	all_time=[]
 	for k,v in result_f.items():
-		a_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix='tbpipeline/results/'+k+'/'+sample_id+v)
+		a_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix='tbwgpipeline/results/'+k+'/'+sample_id+v)
 		if 'Contents' in a_file:
 			all_time.append(abs(int((a_file['Contents'][0]['LastModified']-uploaded_file['Contents'][0]['LastModified']).total_seconds())))
 	if len(all_time)>1 and max(all_time) > completetime:
@@ -119,28 +134,23 @@ def get_max_time(s3, sample_id, completetime, q):
 def all_file_confirmation(s3, sample_id, q, start_time, call_status, status_, links):
 	flag = "ERR"
 	if status_:
-		# if call_status:
-		# 	flag = "Y"
-		# else:
-		# 	flag = "N"
 		flag = "COM"
-		botresponse = requests.get('http://'+links[1]+':80?files='+sample_id+'&type=mcd')
-		time.sleep(10)
+	botresponse = requests.get('http://'+links[1]+':80?files='+sample_id+'&type=mcd&state='+flag.lower()+'&code=tbwg')
 	conn = sqlq.connect(user="docker",password="Docker@123456789",host="10.10.40.132",database="aarogya")
 	cursor = conn.cursor()
 	completetime = int(time.time()-start_time)
 	completetime = get_max_time(s3, sample_id, completetime, q)
 	if len(sample_id)==36:
-		query = "UPDATE files SET MCDFlag= %s, completetime = %s WHERE fileID= %s"
+		query = "UPDATE files SET completetime = %s WHERE fileID= %s"
 	else:
-		query = "UPDATE files SET MCDFlag= %s, completetime = %s WHERE filePairKey= %s"
-	values = (flag, completetime, sample_id)
+		query = "UPDATE files SET completetime = %s WHERE filePairKey= %s"
+	values = (completetime, sample_id)
 	cursor.execute(query, values)
 	conn.commit()
 	cursor.close()
 
 def download_and_rename(sample_id, s3):
-	file_loc = 'tbpipeline/nanopore/'
+	file_loc = 'tbwgpipeline/nanopore/'
 	conn = sqlq.connect(user="docker", password="Docker@123456789", host="10.10.40.132", database="aarogya")
 	cursor = conn.cursor()
 	query = "SELECT fileName FROM files WHERE fileID = %s OR filePairKey = %s"
@@ -173,14 +183,14 @@ def generate_file(sample_id, q, metadata, links, species_set):
 					download_and_rename(sample_id, s3)
 					prefix = 'n'
 				else:
-					fastq = s3.download_file('webserver-deployment-data','tbpipeline/bam/'+sample_id+'.sorted.bam','sorted_bam/'+sample_id+'.sorted.bam')
+					fastq = s3.download_file('webserver-deployment-data','tbwgpipeline/bam/'+sample_id+'.sorted.bam','sorted_bam/'+sample_id+'.sorted.bam')
 					if len(sample_id)!=36:
 						prefix = ''
 					else:
 						prefix = 's'
 				bio_status1 = subprocess.call(['sh', prefix+'demo.sh',sample_id])
 				if bio_status1 == 0 and sample_id+'_Taxaids.txt' in os.listdir('results'):
-					s3.upload_file('results/'+sample_id+'_Taxaids.txt','webserver-deployment-data','tbpipeline/'+'taxaids/'+sample_id+'.txt')
+					s3.upload_file('results/'+sample_id+'_Taxaids.txt','webserver-deployment-data','tbwgpipeline/'+'taxaids/'+sample_id+'.txt')
 					call_status = get_excel_sheet(sample_id, species_set)
 				else:
 					call_status='ERR'
@@ -188,7 +198,7 @@ def generate_file(sample_id, q, metadata, links, species_set):
 			except:
 				call_status='ERR'
 				status_ = no_file(sample_id)
-			s3.upload_file('excel_results/'+sample_id+'.xlsx','webserver-deployment','tbpipeline/results/mcd/'+sample_id+'.xlsx')
+			s3.upload_file('excel_results/'+sample_id+'.xlsx','webserver-deployment','tbwgpipeline/results/mcd/'+sample_id+'.xlsx')
 			all_file_confirmation(s3, sample_id, q, start_time, call_status, status_, links)
 			clear_cache([sample_id+'.',sample_id+'_'],['.','results','sorted_bam','excel_results','queue'])
 		else:
