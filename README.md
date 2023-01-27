@@ -5,6 +5,11 @@ Pipeline for detection of all different bacteria present within a query sequence
  - Gives Microbial Diversity Report with different Microbial Density and Read Density in Sequencing Samples.
  - Installed Libraries -  kraken2, g++, conda, minimap2, porechop, samtools, pandas, XlsxWriter, boto3, requests, flask, mysql-connector-python.
 
+## New Features and improvements - Jan 2023
+
+ - RDS Databases call added
+ - Database login credentials stored in environment File
+
 ## Installation
 
  - Clone this repository:
