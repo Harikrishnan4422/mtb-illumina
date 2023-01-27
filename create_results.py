@@ -2,6 +2,14 @@ import os, pickle, subprocess, xlsxwriter, multiprocessing, boto3, time, request
 from flask import Flask, request, Response
 import mysql.connector as sqlq
 import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
+
+USER = 'docker'
+PASSWORD = os.getenv('PASSWORD')
+HOST = os.getenv('HOST')
+DATABASE = os.getenv('DATABASE')
 
 def create_excel(sample_id,i_df):
 	writer = pd.ExcelWriter(os.path.join('excel_results',str(sample_id+'.xlsx')), engine='xlsxwriter')
@@ -118,10 +126,13 @@ def get_excel_sheet(sample_id, species_set):
 	writer.save()
 	return call_status
 
-def get_max_time(s3, sample_id, completetime, q):
+def get_max_time(s3, sample_id, completetime, q, links):
 	ref={0:'nanopore/'+sample_id,1:'single/'+sample_id,2:'paired/'+sample_id+'/'+sample_id+'.json'}
 	result_f = {'dst':'.xlsx','ntm':'.xlsx','qc':'.html','mcd':'.xlsx'}
-	uploaded_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix='tbwgpipeline/'+ref[q])
+	if links=='pro':
+		uploaded_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix='tbwgpipeline/'+ref[q])
+	else:
+		uploaded_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix='retries/'+links)
 	all_time=[]
 	for k,v in result_f.items():
 		a_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix='tbwgpipeline/results/'+k+'/'+sample_id+v)
@@ -131,15 +142,15 @@ def get_max_time(s3, sample_id, completetime, q):
 		completetime = max(all_time)
 	return completetime
 
-def all_file_confirmation(s3, sample_id, q, start_time, call_status, status_, links):
+def all_file_confirmation(s3, sample_id, q, start_time, call_status, status_, links, metadata):
 	flag = "ERR"
 	if status_:
 		flag = "COM"
-	botresponse = requests.get('http://'+links[1]+':80?files='+sample_id+'&type=mcd&state='+flag.lower()+'&code=tbwg')
-	conn = sqlq.connect(user="docker",password="Docker@123456789",host="10.10.40.132",database="aarogya")
+	botresponse = requests.get('http://10.10.20.150:80?files='+sample_id+'&type=mcd&state='+flag.lower()+'&code=tbwg')
+	conn = sqlq.connect(user=metadata['USER'],password=metadata['PASSWORD'],host=metadata['HOST'],database=metadata['DATABASE'])
 	cursor = conn.cursor()
 	completetime = int(time.time()-start_time)
-	completetime = get_max_time(s3, sample_id, completetime, q)
+	completetime = get_max_time(s3, sample_id, completetime, q, links)
 	if len(sample_id)==36:
 		query = "UPDATE files SET completetime = %s WHERE fileID= %s"
 	else:
@@ -149,9 +160,9 @@ def all_file_confirmation(s3, sample_id, q, start_time, call_status, status_, li
 	conn.commit()
 	cursor.close()
 
-def download_and_rename(sample_id, s3):
+def download_and_rename(sample_id, s3, metadata):
 	file_loc = 'tbwgpipeline/nanopore/'
-	conn = sqlq.connect(user="docker", password="Docker@123456789", host="10.10.40.132", database="aarogya")
+	conn = sqlq.connect(user=metadata['USER'],password=metadata['PASSWORD'],host=metadata['HOST'],database=metadata['DATABASE'])
 	cursor = conn.cursor()
 	query = "SELECT fileName FROM files WHERE fileID = %s OR filePairKey = %s"
 	values = (sample_id, sample_id)
@@ -166,7 +177,7 @@ def download_and_rename(sample_id, s3):
 		s3.download_file('webserver-deployment',file_loc+sample_id,'sorted_bam/'+sample_id+'.fastq.gz')
 
 def generate_file(sample_id, q, metadata, links, species_set):
-	time.sleep(random.randint(5, links[2]))
+	time.sleep(random.randint(1, 15))
 	eqn = len(os.listdir('queue'))
 	try:
 		if eqn<2:
@@ -180,7 +191,7 @@ def generate_file(sample_id, q, metadata, links, species_set):
 				start_time = time.time()
 				s3 = boto3.client("s3",region_name='ap-south-1')
 				if q==0:
-					download_and_rename(sample_id, s3)
+					download_and_rename(sample_id, s3, metadata)
 					prefix = 'n'
 				else:
 					fastq = s3.download_file('webserver-deployment-data','tbwgpipeline/bam/'+sample_id+'.sorted.bam','sorted_bam/'+sample_id+'.sorted.bam')
@@ -199,12 +210,13 @@ def generate_file(sample_id, q, metadata, links, species_set):
 				call_status='ERR'
 				status_ = no_file(sample_id)
 			s3.upload_file('excel_results/'+sample_id+'.xlsx','webserver-deployment','tbwgpipeline/results/mcd/'+sample_id+'.xlsx')
-			all_file_confirmation(s3, sample_id, q, start_time, call_status, status_, links)
+			all_file_confirmation(s3, sample_id, q, start_time, call_status, status_, links, metadata)
 			clear_cache([sample_id+'.',sample_id+'_'],['.','results','sorted_bam','excel_results','queue'])
 		else:
 			with open('all_queue/'+sample_id+'.txt', 'w') as fp:
 				pass
 			print('Saved in all_queue folder.')
+			time.sleep(random.randint(1, 15))
 			generate_file(sample_id, q, metadata, links, species_set)
 	except:
 		clear_cache([sample_id+'.',sample_id+'_'],['.','results','sorted_bam','excel_results','queue'])
@@ -216,7 +228,8 @@ species_set = set(lines)
 
 locs = {'taxaids':['_Taxaids.txt']}
 metadata = {'locs':locs,'dev':['172.31.33.7','65.1.248.114',10,'dev'],
-'pro':['internal-Aarogya-Internal-ALB-785557005.ap-south-1.elb.amazonaws.com','10.10.20.150',30,'pro']}
+'pro':['internal-Aarogya-Internal-ALB-785557005.ap-south-1.elb.amazonaws.com','10.10.20.150',30,'pro'],
+'USER':USER,'PASSWORD':PASSWORD,'HOST':HOST,'DATABASE':DATABASE}
 
 app=Flask(__name__)
 @app.route('/', methods=['GET'])
@@ -225,7 +238,7 @@ def welcome():
 	q=int(request.args.get('q'))
 	env=str(request.args.get('env'))
 	try:
-		p=multiprocessing.Process(target=generate_file, args=(sample_id, q, metadata, metadata[env], species_set, ))
+		p=multiprocessing.Process(target=generate_file, args=(sample_id, q, metadata, env, species_set, ))
 		p.start()
 		return 'Files of '+sample_id+' saved in the folder.'
 	except:
