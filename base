@@ -1,0 +1,26 @@
+FROM ubuntu:22.04
+ENV PATH="/root/miniconda3/bin:${PATH}"
+ARG PATH="/root/miniconda3/bin:${PATH}"
+ENV DEBIAN_FRONTEND noninteractive
+
+RUN apt update && apt install -y tcl perl
+RUN apt-get update && mkdir /data && mkdir /data/kraken_db
+
+RUN apt-get install -y wget cutadapt && rm -rf /var/lib/apt/lists/*
+
+RUN wget \
+    https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+    && mkdir /root/.conda \
+    && bash Miniconda3-latest-Linux-x86_64.sh -b \
+    && rm -f Miniconda3-latest-Linux-x86_64.sh
+COPY environment.yml /usr/app/
+WORKDIR /usr/app
+
+RUN conda env create -f environment.yml
+SHELL ["conda", "run", "--no-capture-output", "-n", "myenv", "/bin/bash", "-c"]
+
+RUN apt-get update && apt-get -y upgrade && apt-get -y autoremove && apt-get -y install sudo make gzip pigz awscli htop curl nano zip kraken2 grep
+RUN sudo rm -rf /etc/localtime && sudo ln -s /usr/share/zoneinfo/Asia/Kolkata /etc/localtime
+RUN R -e "install.packages('BiocManager',dependencies=TRUE, repos='http://cran.rstudio.com/')"
+RUN R -e 'BiocManager::install(ask = F)' && Rscript -e 'requireNamespace("BiocManager"); BiocManager::install("ggtree",ask=F,force = TRUE);'
+RUN chmod -R +x .
