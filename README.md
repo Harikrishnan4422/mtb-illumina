@@ -1,3 +1,6 @@
+# Version
+v9.4.7
+
 # microbial-diversity
 Pipeline for detection of all different bacteria present within a query sequence.
 
