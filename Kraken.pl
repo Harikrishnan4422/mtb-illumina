@@ -5,7 +5,11 @@ use Data::Dumper;
 use File::Basename;
 
 my @files=<$ARGV[0]>;
+<<<<<<< HEAD
 my @fields = ("Eukaryota","Bacteria","Fungi","Archaea","Viruses","Homo sapiens","unclassified");  #Defining fields
+=======
+my @fields = ("Bacteria","Fungi","Archaea","Viruses","Homo sapiens","Unclassified");  #Defining fields
+>>>>>>> b38db8b (Initial commit for v2 prod version)
 
 my $out = {};
 foreach my $file (@files) {
@@ -20,7 +24,11 @@ my $value = $tmp_f[5];
 my $rc = $tmp_f[1];
 $value=~s/^\s*//g;
 #print "val = $value\n";
+<<<<<<< HEAD
 if ($value eq "root" or $value eq "unclassified") {
+=======
+if ($value eq "root" or $value eq "Unclassified") {
+>>>>>>> b38db8b (Initial commit for v2 prod version)
 $read_count += $rc;
 }
 if (scalar grep {$_ eq $value} @fields) {

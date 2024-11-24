@@ -16,12 +16,12 @@ def get_max_time(s3, sample_id, completetime, links, input_type):
 	ref={0:'nanopore/'+sample_id,1:'single/'+sample_id,2:'paired/'+sample_id+'/'+sample_id+'.json'}
 	result_f = {'mcd':'.xlsx'}
 	if links=='pro':
-		uploaded_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix=input_type+'/'+ref[q])
+		uploaded_file = s3.list_objects_v2(Bucket='prod-aai', Prefix=input_type+'/'+ref[q])
 	else:
-		uploaded_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix='retries/'+links)
+		uploaded_file = s3.list_objects_v2(Bucket='prod-aai', Prefix='retries/'+links)
 	all_time=[]
 	for k,v in result_f.items():
-		a_file = s3.list_objects_v2(Bucket='webserver-deployment', Prefix=input_type+'/results/'+k+'/'+sample_id+v)
+		a_file = s3.list_objects_v2(Bucket='prod-aai', Prefix=input_type+'/results/'+k+'/'+sample_id+v)
 		if 'Contents' in a_file:
 			all_time.append(abs(int((a_file['Contents'][0]['LastModified']-uploaded_file['Contents'][0]['LastModified']).total_seconds())))
 	if len(all_time)>1 and max(all_time) > completetime:
@@ -36,7 +36,8 @@ def file_query(s3, sample_id, start_time, q, input_type, metadata, links):
 	if q == 1 or q==0:
 		id_type = 'fileID'
 	# if p_type=='nnaapipeline':
-	# 	botresponse = requests.get('http://10.10.20.150:80?files='+sample_id+'&type=mcd&state=err&code='+i_type[input_type].lower())
+	# 	botresponse = requests.get('http://
+	# :80?files='+sample_id+'&type=mcd&state=err&code='+i_type[input_type].lower())
 		
 	completetime = int(time.time()-start_time)
 	completetime = get_max_time(s3, sample_id, completetime, links,input_type)
@@ -64,14 +65,14 @@ def downloadfiles(s3, sample_id, q, input_type,metadata):
 	first_filename=getFileFormat(sample_id, q, input_type,metadata)
 	if q==2:
 		s3_resource = boto3.resource('s3')
-		bucket = s3_resource.Bucket('webserver-deployment') 
+		bucket = s3_resource.Bucket('prod-aai') 
 		for obj in bucket.objects.filter(Prefix = input_type+'/paired/'+sample_id):
 			if obj.key.find('.json')==-1:
 				bucket.download_file(obj.key, 'paired_samples/'+obj.key.split('/')[-1])
 			else:
 				bucket.download_file(obj.key, obj.key.split('/')[-1])
 	elif q==1:
-		s3.download_file('webserver-deployment',input_type+'/single/'+sample_id,'single_samples/'+sample_id)
+		s3.download_file('prod-aai',input_type+'/single/'+sample_id,'single_samples/'+sample_id)
 	is_fastq = rename_files(sample_id,q,first_filename)
 	return is_fastq
 
@@ -113,9 +114,13 @@ def UpdateFileByMddPipeline(fileID, fileCode, status_, input_type):
 		elif fileCode.lower() == 'gono':
 			query = "UPDATE files SET fileCode = 'GONO', DSTFlag = 'PRO', QCFlag = 'PRO', COLFlag = 'PRO' WHERE (fileID = %s OR filePairKey = %s)"
 		elif fileCode.lower() == 'cant':
-			query = "UPDATE files SET fileCode = 'CANT', DSTFlag = 'PRO', QCFlag = 'PRO', COLFlag = 'PRO' WHERE (fileID = %s OR filePairKey = %s)"
+			query = "UPDATE files SET fileCode = 'CANT', DSTFlag = 'PRO', VIRFlag = 'PRO', QCFlag = 'PRO', PLOFlag = 'PRO', COLFlag = 'PRO' WHERE (fileID = %s OR filePairKey = %s)"
 		elif fileCode.lower() == 'cana':
-			query = "UPDATE files SET fileCode = 'CANA', DSTFlag = 'PRO', VIRFlag = 'PRO', QCFlag = 'PRO', COLFlag = 'PRO' WHERE (fileID = %s OR filePairKey = %s)"
+			query = "UPDATE files SET fileCode = 'CANA', DSTFlag = 'PRO', VIRFlag = 'PRO', QCFlag = 'PRO', PLOFlag = 'PRO', COLFlag = 'PRO' WHERE (fileID = %s OR filePairKey = %s)"
+		elif fileCode.lower() == 'caal':
+			query = "UPDATE files SET fileCode = 'CAAL', DSTFlag = 'PRO', VIRFlag = 'PRO', QCFlag = 'PRO', PLOFlag = 'PRO', COLFlag = 'PRO' WHERE (fileID = %s OR filePairKey = %s)"
+		elif fileCode.lower() == 'capa':
+			query = "UPDATE files SET fileCode = 'CAPA', DSTFlag = 'PRO', VIRFlag = 'PRO', QCFlag = 'PRO', PLOFlag = 'PRO', COLFlag = 'PRO' WHERE (fileID = %s OR filePairKey = %s)"
 		elif fileCode.lower() == 'covd':
 			query = "UPDATE files SET fileCode = 'COVD', VDRFlag = 'PRO', QCFlag = 'PRO', COLFlag = 'PRO' WHERE (fileID = %s OR filePairKey = %s)"
 		values = (fileID, fileID)
@@ -124,7 +129,11 @@ def UpdateFileByMddPipeline(fileID, fileCode, status_, input_type):
 		cursor.close()
 	if input_type!='nnaapipeline':
 		fileCode = input_type[:4]
-	botresponse = requests.get('http://10.10.20.150:80?files='+fileID+'&type=mcd&state='+status_.lower()+'&code='+fileCode.lower())
+		bot_filecode = fileCode
+		if bot_filecode.lower().find('tbwg')!=-1:
+			bot_filecode+='9'
+	botresponse = requests.get('http://10.0.15.79:80?files='+fileID+'&type=mcd&state='+status_.lower()+'&code='+bot_filecode.lower())
+	print('Request Status:', fileID, 'State', status_, 'Filecode', fileCode)
 
 def move_seq_files(s3, sample_id, q, dest, status_, input_type):
 	seq_type = {0:'nanopore/',1:'single/',2:'paired/'}
@@ -132,12 +141,14 @@ def move_seq_files(s3, sample_id, q, dest, status_, input_type):
 	try:
 		if input_type!='nnaapipeline':
 			dest = input_type
-		s3.upload_file(sample_id+'_kraken.txt','webserver-deployment',dest+'/results/mcd/'+sample_id+'-1.txt')
-		s3.upload_file(sample_id+'_tophit.txt','webserver-deployment',dest+'/results/mcd/'+sample_id+'-2.txt')
-		s3.upload_file(sample_id+'histogram.png','webserver-deployment',dest+'/results/mcd/'+sample_id+'.png')
-		s3.upload_file(sample_id,'webserver-deployment-data','nnaapipeline/kraken/'+sample_id)
+		print(os.listdir('.'))
+		s3.upload_file(sample_id+'_kraken.txt','prod-aai',dest+'/results/mcd/'+sample_id+'-1.txt')
+		s3.upload_file(sample_id+'_tophit.txt','prod-aai',dest+'/results/mcd/'+sample_id+'-2.txt')
+		s3.upload_file(sample_id+'histogram.png','prod-aai',dest+'/results/mcd/'+sample_id+'.png')
+		s3.upload_file(sample_id,'prod-aai-data','nnaapipeline/kraken/'+sample_id)
 	except:
 		status_="ERR"
+	UpdateFileByMddPipeline(sample_id, dest[:4].upper(), status_, input_type)
 	
 	if dest!='nnaapipeline' and input_type=='nnaapipeline':
 		# set the source and destination paths
@@ -149,20 +160,19 @@ def move_seq_files(s3, sample_id, q, dest, status_, input_type):
 
 
 		# list all objects in the source path
-		objects = s3.list_objects_v2(Bucket='webserver-deployment', Prefix=src_path)
+		objects = s3.list_objects_v2(Bucket='prod-aai', Prefix=src_path)
 
 		# create a list of objects to be moved
 		objects_to_move = [{'Key': obj['Key']} for obj in objects.get('Contents', [])]
 
 		# copy objects to the destination path
 		for obj in objects_to_move:
-			s3.copy_object(Bucket='webserver-deployment', CopySource={'Bucket': 'webserver-deployment', 'Key': obj['Key']}, Key=dst_path + obj['Key'].replace(src_path, ''))
+			s3.copy_object(Bucket='prod-aai', CopySource={'Bucket': 'prod-aai', 'Key': obj['Key']}, Key=dst_path + obj['Key'].replace(src_path, ''))
 
 		# delete objects from the source path
 		for obj in objects_to_move:
-			s3.delete_object(Bucket='webserver-deployment', Key=obj['Key'])
+			s3.delete_object(Bucket='prod-aai', Key=obj['Key'])
 
-	UpdateFileByMddPipeline(sample_id, dest[:4].upper(), status_, input_type)
 
 def generate_file(sample_id, q, metadata, links, input_type):
 	eqn = len(os.listdir('queue'))
@@ -175,12 +185,22 @@ def generate_file(sample_id, q, metadata, links, input_type):
 		start_time = time.time()
 		s3 = boto3.client("s3",region_name='ap-south-1')
 		with open('/data/kraken_db/'+sample_id+'.json', 'w') as f:
-			json.dump({'q':str(q),'input_type':input_type}, f)
+			if q == 2:
+				input_folder_name = 'paired/'+sample_id
+			elif q == 1:
+				input_folder_name = 'single'
+			elif q == 0:
+				input_folder_name = 'nanopore'
+			json.dump({'q':str(q),'input_bucket':'prod-aai','input_prefix':input_type + '/' + input_folder_name}, f)
 		# fastq = downloadfiles(s3, sample_id, q, input_type,metadata)
 		cr_loop = True
 		while cr_loop:
-			if sample_id in os.listdir('/data/kraken_db'):
+			if sample_id+'.txt' in os.listdir('/data/kraken_db'):
 				cr_loop=False
+				if sample_id not in os.listdir('/data/kraken_db'):
+					print('Sample failed QC check')
+					status_="ERR"
+					break
 			else:
 				print('Waiting for sample to process..')
 				time.sleep(10)
@@ -198,6 +218,9 @@ def generate_file(sample_id, q, metadata, links, input_type):
 			if bio_status1==0:
 				df = pd.read_csv(sample_id+'_tophit.txt', sep='\t').sort_values(['Read Density(%)'],ascending=False)
 				print(df)
+				df_index_len = len(df.index)
+				if df_index_len==0:
+					status_="ERR"
 				sp_names = list(df['Organism Name'].str.lower())
 				
 				for sp_name in sp_names:
@@ -223,6 +246,12 @@ def generate_file(sample_id, q, metadata, links, input_type):
 						break
 					elif sp_name.find('candida tropicalis')!=-1:
 						p_type = 'cantpipeline'
+						break
+					elif sp_name.find('candida albicans')!=-1:
+						p_type = 'caalpipeline'
+						break
+					elif sp_name.find('candida parapsilosis')!=-1:
+						p_type = 'capapipeline'
 						break
 		print(p_type)
 		file_query(s3, sample_id, start_time, q, input_type, metadata, links)

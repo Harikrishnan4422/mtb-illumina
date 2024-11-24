@@ -18,8 +18,16 @@ sample=$1 #sample name
 #   kraken2 --memory-mapping --use-names --thread 16 --db /data/kraken_db/ --report $sample --paired $fastq_file_1 $fastq_file_2
 # fi
 
+<<<<<<< HEAD
 mv /data/kraken_db/$sample .
 perl Kraken.pl $sample > $sample"_kraken.txt" #Parse the kraken output
 Rscript Taxahist.R $sample"_kraken.txt" $sample #Plotting kraken output
 # Printing top 10 species
 grep -w "S" $sample | sort -nr | awk 'BEGIN {print "Sr No.\tOrganism Name\tTax ID\tNo. of reads\tRead Density(%)"} {gsub("[][]","",$6); print NR"\t"$6" "$7" "$8" " $9"\t"$5"\t"$2"\t"$1}' |head -11 > $sample"_tophit.txt"
+=======
+cp /data/kraken_db/$sample .
+perl Kraken.pl $sample > $sample"_kraken.txt" #Parse the kraken output
+Rscript Taxahist.R $sample"_kraken.txt" $sample #Plotting kraken output
+# Printing top 10 species
+grep -w "S" $sample | sort -nr | awk 'BEGIN {print "Sr No.\tOrganism Name\tTax ID\tNo. ofreads\tRead Density(%)"}{gsub("[][]","",$6); if($1>1) print NR"\t"$6" "$7" "$8" " $9"\t"$5"\t"$2"\t"$1}' > $sample"_tophit.txt"
+>>>>>>> b38db8b (Initial commit for v2 prod version)
