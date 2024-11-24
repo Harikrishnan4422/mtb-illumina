@@ -1,5 +1,1 @@
-.env
-<<<<<<< HEAD
-
-=======
->>>>>>> b38db8b (Initial commit for v2 prod version)
+*.env
