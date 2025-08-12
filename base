@@ -16,6 +16,10 @@ RUN wget \
 COPY environment.yml /usr/app/
 WORKDIR /usr/app
 
+# accept conda TOS
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
 RUN conda env create -f environment.yml
 SHELL ["conda", "run", "--no-capture-output", "-n", "myenv", "/bin/bash", "-c"]
 
