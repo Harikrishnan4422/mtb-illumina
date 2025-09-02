@@ -1,5 +1,6 @@
-FROM aai_mdd:v1_base
+#FROM aai_mdd:v1_base
 
+FROM asia-south1-docker.pkg.dev/aai-migration-july25/aai-base-images/aai_mdd:v1_base
 COPY . /usr/app
 WORKDIR /usr/app
 
