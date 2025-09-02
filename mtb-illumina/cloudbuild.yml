@@ -1,1 +1,66 @@
+# cloudbuild.yaml
+# Build -> Push to Artifact Registry -> Deploy Cloud Run Job -> Execute
 
+substitutions:
+  _PROJECT_ID: aai-migration-july25
+  _REGION: asia-south1
+  _REPOSITORY_PATH: aai-mtb-illumina/aai-mtb-illumina   # <REPOSITORY>/<IMAGE>
+  _JOB_NAME: aai-mtb-illumina-job
+  _CPU: "1"
+  _MEM: 1Gi
+  _APP_DIR: "."         # change if your Dockerfile is in a subfolder
+
+options:
+  substitutionOption: ALLOW_LOOSE
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+# 1) Build image with two tags: immutable (:$SHORT_SHA) and :latest
+- name: gcr.io/cloud-builders/docker
+  id: Build
+  dir: '$_APP_DIR'
+  args:
+    [
+      'build',
+      '-t','$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY_PATH:$SHORT_SHA',
+      '-t','$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY_PATH:latest',
+      '.'
+    ]
+
+# 2) Push both tags to Artifact Registry
+- name: gcr.io/cloud-builders/docker
+  id: Push SHA
+  args: ['push','$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY_PATH:$SHORT_SHA']
+
+- name: gcr.io/cloud-builders/docker
+  id: Push latest
+  args: ['push','$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY_PATH:latest']
+
+# 3) Deploy/Update Cloud Run Job to use the new image tag (:$SHORT_SHA)
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  id: Deploy Job
+  entrypoint: gcloud
+  args:
+    [
+      'run','jobs','deploy','$_JOB_NAME',
+      '--image','$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY_PATH:$SHORT_SHA',
+      '--region','$_REGION',
+      '--cpu','$_CPU',
+      '--memory','$_MEM'
+      # Optional flags:
+      # '--tasks','1',
+      # '--max-retries','3',
+      # '--set-env-vars','KEY=VALUE,OTHER=VALUE',
+      # '--service-account','job-runtime@${PROJECT_ID}.iam.gserviceaccount.com'
+    ]
+
+# 4) Execute the job and wait for completion (remove if you don't want auto-run)
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  id: Execute Job
+  entrypoint: gcloud
+  args: ['run','jobs','execute','$_JOB_NAME','--region','$_REGION','--wait']
+
+# Register images for Cloud Build UI
+images:
+- '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY_PATH:$SHORT_SHA'
+- '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY_PATH:latest'
